@@ -8,7 +8,7 @@ COMPOSE := docker compose
 MIGRATE := $(COMPOSE) run --rm migrate
 DB_URL  := postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)?sslmode=disable
 
-.PHONY: help up down restart logs ps db-up run-api run-frontend \
+.PHONY: help up down restart logs ps db-up run-api run-frontend test \
         migrate-create migrate-up migrate-down clean
 
 help: ## Show available commands
@@ -48,6 +48,9 @@ run-api: ## Run backend locally (needs make db-up)
 
 run-frontend: ## Run Vite dev server locally (proxies /api to localhost:$(HTTP_PORT))
 	cd frontend && npm run dev
+
+test: ## Run backend unit tests
+	go test ./...
 
 # --- Migrations ---------------------------------------------------------------
 
