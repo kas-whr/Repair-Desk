@@ -1,0 +1,10 @@
+.git
+.env
+frontend
+docs
+migrations
+*.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+Makefile
