@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS comments;
+DROP TABLE IF EXISTS tickets;
+DROP TABLE IF EXISTS equipment;
+DROP TABLE IF EXISTS categories;
