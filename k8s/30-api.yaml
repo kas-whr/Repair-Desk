@@ -1,0 +1,96 @@
+# Backend: ConfigMap (non-secret config) + Deployment (2 stateless replicas) + Service.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: repair-desk
+data:
+  HTTP_PORT: "8080"
+  LOG_LEVEL: INFO
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_SSLMODE: disable
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: repair-desk
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      # The API exits if the DB is unreachable at startup; wait instead of crash-looping
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:17-alpine
+        command: ["sh", "-c", "until pg_isready -h postgres -p 5432; do sleep 2; done"]
+        resources:
+          limits:
+            cpu: 50m
+            memory: 32Mi
+      containers:
+      - name: api
+        image: repair-desk-api:0.1.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: api-config
+        - secretRef:
+            name: postgres-credentials
+        # Ready only when the database answers; not ready pods get no traffic
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        # Restart only if the process itself hangs
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: repair-desk
+spec:
+  type: ClusterIP
+  selector:
+    app: api
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080

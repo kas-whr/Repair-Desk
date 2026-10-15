@@ -1,6 +1,12 @@
 -include .env
 export
 
+# Recipes use bash syntax (eval, read, [ ]). From PowerShell/cmd GNU make on Windows
+# would fall back to cmd.exe, so point it to Git Bash explicitly.
+ifeq ($(OS),Windows_NT)
+SHELL := C:/Program Files/Git/bin/bash.exe
+endif
+
 # Git Bash on Windows rewrites args like /migrations into C:/Program Files/Git/...
 export MSYS_NO_PATHCONV := 1
 
@@ -8,8 +14,14 @@ COMPOSE := docker compose
 MIGRATE := $(COMPOSE) run --rm migrate
 DB_URL  := postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)?sslmode=disable
 
+# Image tag used by docker build and k8s manifests (bump on every release)
+VERSION := 0.1.0
+K8S_NS  := repair-desk
+KUBECTL := kubectl -n $(K8S_NS)
+
 .PHONY: help up down restart logs ps db-up run-api run-frontend test \
-        migrate-create migrate-up migrate-down clean
+        migrate-create migrate-up migrate-down clean \
+        k8s-build k8s-secret k8s-deploy k8s-status k8s-url k8s-delete
 
 help: ## Show available commands
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -63,3 +75,33 @@ migrate-up: ## Apply all pending migrations
 
 migrate-down: ## Roll back migrations: make migrate-down n=1 (default 1)
 	@$(MIGRATE) -path=/migrations -database="$(DB_URL)" down $(or $(n),1)
+
+# --- Kubernetes (minikube) ----------------------------------------------------
+
+k8s-build: ## Build images inside minikube's Docker daemon
+	eval $$(minikube docker-env --shell bash) && \
+	docker build -t repair-desk-api:$(VERSION) . && \
+	docker build -t repair-desk-frontend:$(VERSION) frontend && \
+	docker build -t repair-desk-migrate:$(VERSION) migrations
+
+k8s-secret: ## Create/update Secret postgres-credentials from .env
+	@kubectl apply -f k8s/00-namespace.yaml
+	@$(KUBECTL) create secret generic postgres-credentials \
+		--from-literal=POSTGRES_DB="$(POSTGRES_DB)" \
+		--from-literal=POSTGRES_USER="$(POSTGRES_USER)" \
+		--from-literal=POSTGRES_PASSWORD="$(POSTGRES_PASSWORD)" \
+		--dry-run=client -o yaml | kubectl apply -f -
+
+k8s-deploy: k8s-secret ## Deploy everything (the migrate Job is recreated on each deploy)
+	$(KUBECTL) delete job migrate --ignore-not-found
+	kubectl apply -f k8s/
+
+k8s-status: ## Show all resources in the namespace
+	$(KUBECTL) get all,pvc,configmap,secret
+
+k8s-url: ## Print the frontend URL (keep the command running on Windows/macOS)
+	minikube service frontend -n $(K8S_NS) --url
+
+k8s-delete: ## Delete the namespace with ALL data (including the database volume)
+	@read -p "Delete namespace $(K8S_NS) with all data? [y/N]: " ans; \
+	if [ "$$ans" = "y" ]; then kubectl delete namespace $(K8S_NS); else echo "Canceled"; fi

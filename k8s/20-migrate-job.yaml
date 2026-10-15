@@ -1,0 +1,43 @@
+# One-off admin process (12-factor XII): applies DB migrations and exits.
+# The init container waits until PostgreSQL accepts connections.
+# golang-migrate takes an advisory lock, so a repeated run is safe and idempotent.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: repair-desk
+spec:
+  backoffLimit: 10
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:17-alpine
+        command: ["sh", "-c", "until pg_isready -h postgres -p 5432; do sleep 2; done"]
+        resources:
+          limits:
+            cpu: 50m
+            memory: 32Mi
+      containers:
+      - name: migrate
+        image: repair-desk-migrate:0.1.0
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - secretRef:
+            name: postgres-credentials
+        args:
+        - -path=/migrations
+        # $(VAR) is expanded by Kubernetes from the container environment
+        - -database=postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)?sslmode=disable
+        - up
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 64Mi

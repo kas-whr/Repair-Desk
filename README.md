@@ -50,6 +50,21 @@ make migrate-up
 make migrate-down n=1
 ```
 
+## Kubernetes (minikube)
+Manifests are in [k8s/](k8s/): namespace, PostgreSQL (StatefulSet + PVC), migrations (Job),
+api (ConfigMap + Deployment with 2 replicas + Service), frontend (Deployment + NodePort Service).
+DB credentials go to the Secret `postgres-credentials`, created from `.env`.
+
+```sh
+minikube start --driver=docker
+make k8s-build      # build images inside minikube's Docker (eval $(minikube docker-env))
+make k8s-deploy     # secret + kubectl apply -f k8s/
+make k8s-status
+make k8s-url        # frontend URL; on Windows keep this terminal open
+```
+
+Images are tagged with `VERSION` from the Makefile; bump it together with the tags in `k8s/*.yaml`.
+
 ## Twelve-factor
 | Factor | How |
 |---|---|
