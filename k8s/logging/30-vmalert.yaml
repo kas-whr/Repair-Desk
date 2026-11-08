@@ -1,0 +1,93 @@
+# vmalert: evaluates LogsQL alerting rules against VictoriaLogs.
+# No Alertmanager: -notifier.blackhole evaluates rules without sending notifications;
+# firing alerts are visible in the vmalert UI:
+#   kubectl -n logging port-forward svc/vmalert 8880:8880  ->  http://localhost:8880/vmalert/alerts
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vmalert-rules
+  namespace: logging
+data:
+  rules.yaml: |
+    groups:
+      - name: repair-desk
+        type: vlogs
+        interval: 1m
+        rules:
+          # Based on query (б) "level:error". Evaluated every minute over the last 5 minutes,
+          # so the alert stays firing for ~5 minutes after the last error.
+          - alert: RepairDeskErrorLogs
+            expr: '_time:5m level:error | stats by (service.name) count() as errors | filter errors:>0'
+            labels:
+              severity: warning
+            annotations:
+              summary: '{{ index $labels "service.name" }}: {{ $value }} error log(s) in the last 5 minutes'
+              logsql: '_time:5m level:error service.name:"{{ index $labels "service.name" }}"'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmalert
+  namespace: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vmalert
+  template:
+    metadata:
+      labels:
+        app: vmalert
+    spec:
+      containers:
+      - name: vmalert
+        image: victoriametrics/vmalert:v1.154.0
+        args:
+        - -datasource.url=http://victorialogs.logging.svc.cluster.local:9428
+        - -rule.defaultRuleType=vlogs
+        - -rule=/etc/vmalert/rules.yaml
+        - -notifier.blackhole
+        - -httpListenAddr=:8880
+        ports:
+        - containerPort: 8880
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8880
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8880
+          initialDelaySeconds: 10
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 20m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        volumeMounts:
+        - name: rules
+          mountPath: /etc/vmalert
+          readOnly: true
+      volumes:
+      - name: rules
+        configMap:
+          name: vmalert-rules
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmalert
+  namespace: logging
+spec:
+  type: ClusterIP
+  selector:
+    app: vmalert
+  ports:
+  - name: http
+    port: 8880
+    targetPort: 8880

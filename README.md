@@ -65,6 +65,36 @@ make k8s-url        # frontend URL; on Windows keep this terminal open
 
 Images are tagged with `VERSION` from the Makefile; bump it together with the tags in `k8s/*.yaml`.
 
+### Logs (VictoriaLogs)
+All services log JSON lines to stdout (`timestamp`, `level`, `message`, `service.name`, `request_id`, …).
+A Vector DaemonSet ships logs of the `repair-desk` namespace to VictoriaLogs (manifests in [k8s/logging/](k8s/logging/)).
+
+```sh
+make logging-deploy   # VictoriaLogs + Vector in namespace logging
+make logging-ui       # then open http://localhost:9428/select/vmui/
+make alerts-ui        # vmalert (alert on error logs): http://localhost:8880/vmalert/alerts
+```
+
+### Metrics (VictoriaMetrics)
+The API exposes Prometheus/OpenMetrics metrics on port `9090` (`/metrics`): Go runtime, HTTP and business metrics
+(`internal/metrics`). PostgreSQL metrics come from a `postgres-exporter` sidecar. VictoriaMetrics single (Helm) scrapes
+pods annotated with `prometheus.io/scrape: "true"`.
+
+```sh
+make monitoring-deploy   # helm upgrade --install vm-single vm/victoria-metrics-single -n monitoring
+make monitoring-ui       # then open http://localhost:8428/vmui/ or /targets
+```
+
+A prober (`cmd/prober`, [k8s/50-prober.yaml](k8s/50-prober.yaml)) opens the tickets page through the frontend every 10s
+and exports `repairdesk_probe_success` (user-facing availability SLI).
+
+For SLO demos the API supports fault injection, disabled by default and limited to `/api/*`:
+```sh
+kubectl -n repair-desk set env deployment/api FAULT_ERROR_RATE=0.3   # 30% of requests -> 500
+kubectl -n repair-desk set env deployment/api FAULT_DELAY_MS=400     # +400 ms per request
+kubectl -n repair-desk set env deployment/api FAULT_ERROR_RATE- FAULT_DELAY_MS-   # back to normal
+```
+
 ## Twelve-factor
 | Factor | How |
 |---|---|

@@ -32,6 +32,11 @@ spec:
     metadata:
       labels:
         app: postgres
+      # Scraped from the postgres-exporter sidecar (port 9187)
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: postgres
@@ -66,6 +71,42 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /var/lib/postgresql/data
+      # Sidecar: containers of a pod share the network, so the exporter reaches the DB on localhost
+      - name: postgres-exporter
+        image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+        ports:
+        - name: metrics
+          containerPort: 9187
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_DB
+        - name: DATA_SOURCE_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_USER
+        - name: DATA_SOURCE_PASS
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: POSTGRES_PASSWORD
+        - name: DATA_SOURCE_URI
+          value: localhost:5432/$(POSTGRES_DB)?sslmode=disable
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 9187
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
   volumeClaimTemplates:
   - metadata:
       name: data

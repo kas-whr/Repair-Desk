@@ -1,0 +1,49 @@
+# Prober (synthetic user): every 10s runs the "open tickets page" scenario through the frontend
+# (nginx -> api -> postgres) and exports repairdesk_probe_* metrics for the availability SLI.
+# Same image as the api, different binary.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prober
+  namespace: repair-desk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prober
+  template:
+    metadata:
+      labels:
+        app: prober
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: prober
+        image: repair-desk-api:0.4.0
+        imagePullPolicy: IfNotPresent
+        command: ["prober"]
+        env:
+        - name: PROBE_TARGET
+          value: http://frontend
+        - name: PROBE_INTERVAL
+          value: 10s
+        - name: PROBE_TIMEOUT
+          value: 2s
+        ports:
+        - name: metrics
+          containerPort: 9090
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true

@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: repair-desk-frontend:0.1.0
+        image: repair-desk-frontend:0.4.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80

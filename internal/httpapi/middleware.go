@@ -4,9 +4,12 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/kas-whr/Repair-Desk/internal/metrics"
 )
 
 type statusWriter struct {
@@ -39,12 +42,34 @@ func withLogging(logger *slog.Logger, next http.Handler) http.Handler {
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r)
 
-		logger.InfoContext(r.Context(), "http request",
+		status := sw.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		level := slog.LevelInfo
+		switch {
+		case status >= 500:
+			level = slog.LevelError
+		case status >= 400:
+			level = slog.LevelWarn
+		}
+
+		route := r.Pattern
+		if route == "" {
+			route = "unmatched" // 404/405: keep label cardinality bounded
+		}
+		elapsed := time.Since(start)
+		metrics.HTTPRequestDuration.WithLabelValues(r.Method, route, strconv.Itoa(status)).Observe(elapsed.Seconds())
+
+		// r.Pattern is set by ServeMux on this same request, e.g. "GET /api/v1/tickets/{id}":
+		// unlike path it has no IDs, so it is suitable for grouping.
+		logger.Log(r.Context(), level, "http request",
 			"request_id", requestID,
 			"method", r.Method,
+			"route", r.Pattern,
 			"path", r.URL.Path,
-			"status", sw.status,
-			"duration_ms", time.Since(start).Milliseconds(),
+			"status", status,
+			"duration_ms", float64(elapsed.Microseconds())/1000,
 		)
 	})
 }

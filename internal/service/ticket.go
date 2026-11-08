@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kas-whr/Repair-Desk/internal/domain"
+	"github.com/kas-whr/Repair-Desk/internal/metrics"
 )
 
 const (
@@ -125,6 +126,7 @@ func (s *TicketService) Create(ctx context.Context, in domain.CreateTicketInput)
 	if err != nil {
 		return TicketView{}, err
 	}
+	metrics.TicketsCreated.WithLabelValues(category.Name, string(created.Priority)).Inc()
 	return s.view(created), nil
 }
 
@@ -178,9 +180,14 @@ func (s *TicketService) ChangeStatus(ctx context.Context, id string, to domain.T
 		)
 	}
 
-	updated, err := s.tickets.UpdateStatus(ctx, id, current.Status, to, s.now().UTC())
+	now := s.now().UTC()
+	updated, err := s.tickets.UpdateStatus(ctx, id, current.Status, to, now)
 	if err != nil {
 		return TicketView{}, err
+	}
+	metrics.TicketStatusChanges.WithLabelValues(string(current.Status), string(to)).Inc()
+	if to == domain.StatusResolved {
+		metrics.RecordResolved(current.CreatedAt, current.DueAt, now)
 	}
 	return s.view(updated), nil
 }

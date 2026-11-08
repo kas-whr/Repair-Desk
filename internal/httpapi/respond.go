@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/kas-whr/Repair-Desk/internal/domain"
+	"github.com/kas-whr/Repair-Desk/internal/metrics"
 )
 
 const maxBodyBytes = 1 << 20
@@ -51,6 +52,7 @@ func writeErrorPayload(w http.ResponseWriter, status int, p ErrorPayload) {
 // writeError maps domain errors to HTTP statuses; everything else is a 500.
 func writeError(w http.ResponseWriter, r *http.Request, logger *slog.Logger, err error) {
 	if de, ok := domain.AsError(err); ok {
+		metrics.RecordRuleViolation(de.Code)
 		writeErrorPayload(w, statusFor(de.Kind), ErrorPayload{Code: de.Code, Message: de.Message, Details: de.Details})
 		return
 	}

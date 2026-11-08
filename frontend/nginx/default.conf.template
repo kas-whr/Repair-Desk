@@ -1,6 +1,29 @@
+# Access log in JSON with the same schema as the API logs (timestamp, level, message, service.name)
+map $status $log_level {
+    ~^5     error;
+    ~^4     warn;
+    default info;
+}
+
+log_format json escape=json '{'
+    '"timestamp":"$time_iso8601",'
+    '"level":"$log_level",'
+    '"message":"http request",'
+    '"service.name":"repair-desk-frontend",'
+    '"request_id":"$request_id",'
+    '"method":"$request_method",'
+    '"path":"$uri",'
+    '"status":$status,'
+    '"duration_s":$request_time,'
+    '"bytes_sent":$body_bytes_sent,'
+    '"user_agent":"$http_user_agent"'
+'}';
+
 server {
     listen 80;
     server_name _;
+
+    access_log /dev/stdout json;
 
     root /usr/share/nginx/html;
     index index.html;
@@ -11,6 +34,8 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Same request_id in nginx and API logs
+        proxy_set_header X-Request-ID $request_id;
     }
 
     # SPA: unknown paths fall back to index.html

@@ -29,6 +29,7 @@ type Deps struct {
 	Comments   *service.CommentService
 	DB         Pinger
 	Logger     *slog.Logger
+	Fault      FaultConfig
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -70,7 +71,10 @@ func NewRouter(d Deps) http.Handler {
 	mux.HandleFunc("PUT /api/v1/tickets/{id}/comments/{commentId}", h.updateComment)
 	mux.HandleFunc("DELETE /api/v1/tickets/{id}/comments/{commentId}", h.deleteComment)
 
-	return withRecover(d.Logger, withLogging(d.Logger, withJSONFallback(mux)))
+	if d.Fault.enabled() {
+		d.Logger.Warn("fault injection is enabled", "error_rate", d.Fault.ErrorRate, "delay", d.Fault.Delay.String())
+	}
+	return withRecover(d.Logger, withLogging(d.Logger, withFault(d.Fault, mux, withJSONFallback(mux))))
 }
 
 func (h *Handler) healthz(w http.ResponseWriter, _ *http.Request) {

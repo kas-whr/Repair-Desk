@@ -12,11 +12,17 @@ import (
 
 	"github.com/kas-whr/Repair-Desk/internal/config"
 	"github.com/kas-whr/Repair-Desk/internal/httpapi"
+	"github.com/kas-whr/Repair-Desk/internal/logging"
+	"github.com/kas-whr/Repair-Desk/internal/metrics"
 	"github.com/kas-whr/Repair-Desk/internal/repository/postgres"
 	"github.com/kas-whr/Repair-Desk/internal/service"
 )
 
+const serviceName = "repair-desk-api"
+
 func main() {
+	// JSON from the very first line, even if config loading fails
+	slog.SetDefault(logging.New(os.Stdout, slog.LevelInfo, serviceName))
 	if err := run(); err != nil {
 		slog.Error("application stopped with error", "error", err)
 		os.Exit(1)
@@ -29,7 +35,7 @@ func run() error {
 		return err
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	logger := logging.New(os.Stdout, cfg.LogLevel, serviceName)
 	slog.SetDefault(logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -56,6 +62,7 @@ func run() error {
 		Comments:   service.NewCommentService(commentRepo, ticketRepo, now),
 		DB:         pool,
 		Logger:     logger,
+		Fault:      httpapi.FaultConfig{ErrorRate: cfg.FaultErrorRate, Delay: cfg.FaultDelay},
 	})
 
 	srv := &http.Server{
@@ -67,14 +74,24 @@ func run() error {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	serverErr := make(chan error, 1)
-	go func() {
-		logger.Info("http server started", "addr", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- err
-		}
-		close(serverErr)
-	}()
+	// Metrics on a separate port: reachable inside the cluster for scraping, not exposed via the frontend
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("GET /metrics", metrics.Handler())
+	metricsSrv := &http.Server{
+		Addr:              ":" + cfg.MetricsPort,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	serverErr := make(chan error, 2)
+	for _, s := range []*http.Server{srv, metricsSrv} {
+		go func() {
+			logger.Info("http server started", "addr", s.Addr)
+			if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				serverErr <- err
+			}
+		}()
+	}
 
 	select {
 	case err := <-serverErr:
@@ -86,5 +103,5 @@ func run() error {
 	logger.Info("shutting down")
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()
-	return srv.Shutdown(shutdownCtx)
+	return errors.Join(srv.Shutdown(shutdownCtx), metricsSrv.Shutdown(shutdownCtx))
 }

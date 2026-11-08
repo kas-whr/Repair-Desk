@@ -15,13 +15,14 @@ MIGRATE := $(COMPOSE) run --rm migrate
 DB_URL  := postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)?sslmode=disable
 
 # Image tag used by docker build and k8s manifests (bump on every release)
-VERSION := 0.1.0
+VERSION := 0.4.0
 K8S_NS  := repair-desk
 KUBECTL := kubectl -n $(K8S_NS)
 
 .PHONY: help up down restart logs ps db-up run-api run-frontend test \
         migrate-create migrate-up migrate-down clean \
-        k8s-build k8s-secret k8s-deploy k8s-status k8s-url k8s-delete
+        k8s-build k8s-secret k8s-deploy k8s-status k8s-url k8s-delete \
+        logging-deploy logging-ui alerts-ui monitoring-deploy monitoring-ui
 
 help: ## Show available commands
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -105,3 +106,25 @@ k8s-url: ## Print the frontend URL (keep the command running on Windows/macOS)
 k8s-delete: ## Delete the namespace with ALL data (including the database volume)
 	@read -p "Delete namespace $(K8S_NS) with all data? [y/N]: " ans; \
 	if [ "$$ans" = "y" ]; then kubectl delete namespace $(K8S_NS); else echo "Canceled"; fi
+
+# --- Logging: VictoriaLogs + Vector ---------------------------------------------
+
+logging-deploy: ## Deploy VictoriaLogs and the Vector DaemonSet (namespace logging)
+	kubectl apply -f k8s/logging/
+	# Vector and vmalert read their ConfigMaps only at startup
+	kubectl -n logging rollout restart daemonset/vector deployment/vmalert
+
+logging-ui: ## Open VictoriaLogs at http://localhost:9428/vmui/ (keep running)
+	kubectl -n logging port-forward svc/victorialogs 9428:9428
+
+alerts-ui: ## Open vmalert at http://localhost:8880/vmalert/alerts (keep running)
+	kubectl -n logging port-forward svc/vmalert 8880:8880
+
+# --- Metrics: VictoriaMetrics single (Helm) ------------------------------------
+
+monitoring-deploy: ## Install/upgrade VictoriaMetrics single via Helm (namespace monitoring)
+	helm repo add vm https://victoriametrics.github.io/helm-charts/ --force-update
+	helm upgrade --install vm-single vm/victoria-metrics-single --version 0.49.0 		-n monitoring --create-namespace -f k8s/monitoring/vmsingle-values.yaml
+
+monitoring-ui: ## Open VictoriaMetrics at http://localhost:8428/vmui/ (keep running)
+	kubectl -n monitoring port-forward svc/vm-single-victoria-metrics-single-server 8428:8428

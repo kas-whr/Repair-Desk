@@ -1,0 +1,74 @@
+# VictoriaLogs single-node: StatefulSet with a persistent volume + Service.
+# Ingestion: POST /insert/jsonline, queries and web UI: /select/logsql/query, /vmui/
+# Open from the host: kubectl -n logging port-forward svc/victorialogs 9428:9428
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: victorialogs
+  namespace: logging
+  labels:
+    app: victorialogs
+spec:
+  type: ClusterIP
+  selector:
+    app: victorialogs
+  ports:
+  - name: http
+    port: 9428
+    targetPort: 9428
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: victorialogs
+  namespace: logging
+spec:
+  serviceName: victorialogs
+  replicas: 1
+  selector:
+    matchLabels:
+      app: victorialogs
+  template:
+    metadata:
+      labels:
+        app: victorialogs
+    spec:
+      containers:
+      - name: victorialogs
+        image: victoriametrics/victoria-logs:v1.53.0
+        args:
+        - -storageDataPath=/victoria-logs-data
+        - -retentionPeriod=7d
+        - -httpListenAddr=:9428
+        ports:
+        - containerPort: 9428
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9428
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9428
+          initialDelaySeconds: 10
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: data
+          mountPath: /victoria-logs-data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 2Gi

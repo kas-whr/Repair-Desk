@@ -1,0 +1,173 @@
+# Vector as a DaemonSet: tails container logs of pods in namespace repair-desk on every node,
+# parses JSON lines, adds Kubernetes metadata and pushes the records to VictoriaLogs.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vector
+  namespace: logging
+---
+# kubernetes_logs needs to read pod/namespace/node metadata from the API server
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vector
+rules:
+- apiGroups: [""]
+  resources: ["pods", "namespaces", "nodes"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vector
+subjects:
+- kind: ServiceAccount
+  name: vector
+  namespace: logging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-config
+  namespace: logging
+data:
+  vector.yaml: |
+    data_dir: /vector-data-dir
+
+    sources:
+      app_pods:
+        type: kubernetes_logs
+        # Only the application, not system or logging pods
+        extra_field_selector: metadata.namespace=repair-desk
+
+    transforms:
+      normalize:
+        type: remap
+        inputs: [app_pods]
+        # abort = drop the record
+        source: |
+          raw = string!(.message)
+          if strip_whitespace(raw) == "" {
+            abort
+          }
+
+          # JSON lines (api, nginx access log): lift their fields to the top level.
+          # Plain text lines (postgres, nginx errors) stay as they are in .message.
+          parsed, err = parse_json(raw)
+          if err == null && is_object(parsed) {
+            . = merge(., object!(parsed))
+          }
+
+          # Kubernetes probes hit the pods every few seconds and would drown real traffic
+          if includes(["/healthz", "/readyz"], .path) || starts_with(string(.user_agent) ?? "", "kube-probe") {
+            abort
+          }
+
+          # Plain text with a severity prefix (postgres: "... LOG:  ...", "... ERROR:  ...")
+          if !exists(.level) {
+            m, err = parse_regex(raw, r'\b(?P<sev>DEBUG\d?|INFO|NOTICE|LOG|WARNING|ERROR|FATAL|PANIC):')
+            if err == null {
+              sev = m.sev
+              .level = if sev == "WARNING" {
+                "warn"
+              } else if sev == "ERROR" {
+                "error"
+              } else if sev == "FATAL" || sev == "PANIC" {
+                "fatal"
+              } else {
+                "info"
+              }
+            }
+          }
+
+          .k8s = {
+            "namespace": .kubernetes.pod_namespace,
+            "pod": .kubernetes.pod_name,
+            "container": .kubernetes.container_name,
+            "node": .kubernetes.pod_node_name,
+          }
+          # Records without their own service.name (e.g. postgres) are named after the container
+          if !exists(."service.name") {
+            ."service.name" = .kubernetes.container_name
+          }
+          del(.kubernetes)
+          del(.file)
+          del(.source_type)
+
+    sinks:
+      victorialogs:
+        type: http
+        inputs: [normalize]
+        uri: http://victorialogs.logging.svc.cluster.local:9428/insert/jsonline?_stream_fields=k8s.namespace,k8s.pod,k8s.container&_msg_field=message&_time_field=timestamp
+        encoding:
+          codec: json
+        framing:
+          method: newline_delimited
+        compression: gzip
+        healthcheck:
+          enabled: false
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vector
+  namespace: logging
+spec:
+  selector:
+    matchLabels:
+      app: vector
+  template:
+    metadata:
+      labels:
+        app: vector
+    spec:
+      serviceAccountName: vector
+      containers:
+      - name: vector
+        image: timberio/vector:0.59.0-alpine
+        args: ["--config", "/etc/vector/vector.yaml"]
+        env:
+        - name: VECTOR_SELF_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            cpu: 300m
+            memory: 256Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/vector
+          readOnly: true
+        # /var/log/pods/*.log are symlinks into /var/lib/docker/containers (docker runtime)
+        - name: var-log
+          mountPath: /var/log
+          readOnly: true
+        - name: docker-containers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+        # Read positions (checkpoints) survive restarts, so logs are not sent twice
+        - name: data
+          mountPath: /vector-data-dir
+      volumes:
+      - name: config
+        configMap:
+          name: vector-config
+      - name: var-log
+        hostPath:
+          path: /var/log
+      - name: docker-containers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: data
+        hostPath:
+          path: /var/lib/vector
+          type: DirectoryOrCreate
