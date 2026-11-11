@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: repairdesk-api
+    static_configs:
+      - targets: [api:9090]
+        labels:
+          namespace: repair-desk
+          app: api
+          pod: compose-api
+
+  - job_name: repairdesk-prober
+    static_configs:
+      - targets: [prober:9090]
+        labels:
+          namespace: repair-desk
+          app: prober
+          pod: compose-prober
+          

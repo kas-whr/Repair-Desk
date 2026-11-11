@@ -1,0 +1,83 @@
+# Запуск из корня:
+# docker compose -f docker-compose.yml -f monitoring/compose.yaml up -d --build
+#
+# Относительные пути разрешаются относительно первого compose-файла,
+# то есть корня репозитория.
+
+x-local-network: &local-network
+  NO_PROXY: "${NO_PROXY:-localhost,127.0.0.1},api,frontend,prober,victoriametrics,alertmanager,alert-inbox"
+  no_proxy: "${no_proxy:-localhost,127.0.0.1},api,frontend,prober,victoriametrics,alertmanager,alert-inbox"
+
+services:
+  api:
+    healthcheck:
+      test: ["CMD", "wget", "-Y", "off", "-qO-", "http://localhost:8080/healthz"]
+    environment:
+      <<: *local-network
+      FAULT_ERROR_RATE: ${FAULT_ERROR_RATE:-0}
+      FAULT_DELAY_MS: ${FAULT_DELAY_MS:-0}
+
+  frontend:
+    environment: *local-network
+
+  prober:
+    build: .
+    entrypoint: [prober]
+    environment:
+      <<: *local-network
+      PROBE_TARGET: http://frontend
+      PROBE_INTERVAL: 5s
+      PROBE_TIMEOUT: 2s
+    depends_on: [frontend]
+
+  victoriametrics:
+    environment: *local-network
+    image: victoriametrics/victoria-metrics:v1.154.0
+    command:
+      - -promscrape.config=/etc/alerts/scrape.yaml
+      - -storageDataPath=/storage
+      - -retentionPeriod=7d
+    volumes:
+      - ./monitoring/scrape.yaml:/etc/alerts/scrape.yaml:ro
+      - alert-metrics:/storage
+    ports: ["127.0.0.1:8428:8428"]
+
+  metrics-vmalert:
+    environment: *local-network
+    image: victoriametrics/vmalert:v1.154.0
+    command:
+      - -datasource.url=http://victoriametrics:8428
+      - -notifier.url=http://alertmanager:9093
+      - -rule=/etc/alerts/rules.yaml
+      - -httpListenAddr=:8880
+    volumes:
+      - ./k8s/monitoring/alerts/rules.yaml:/etc/alerts/rules.yaml:ro
+    ports: ["127.0.0.1:8881:8880"]
+    depends_on: [victoriametrics, alertmanager]
+
+  alertmanager:
+    environment: *local-network
+    image: prom/alertmanager:v0.28.1
+    command:
+      - --config.file=/etc/alerts/alertmanager.yaml
+      - --storage.path=/alertmanager
+      - --cluster.listen-address=
+    volumes:
+      - ./k8s/monitoring/alerts/alertmanager.yaml:/etc/alerts/alertmanager.yaml:ro
+      - alertmanager-data:/alertmanager
+    ports: ["127.0.0.1:9093:9093"]
+    depends_on: [alert-inbox]
+
+  alert-inbox:
+    environment: *local-network
+    image: python:3.13-alpine
+    command: [python, /app/inbox.py]
+    volumes:
+      - ./k8s/monitoring/alerts/inbox.py:/app/inbox.py:ro
+      - alert-inbox-data:/data
+    ports: ["127.0.0.1:8095:8080"]
+
+volumes:
+  alert-metrics:
+  alertmanager-data:
+  alert-inbox-data:

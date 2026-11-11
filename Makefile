@@ -128,3 +128,23 @@ monitoring-deploy: ## Install/upgrade VictoriaMetrics single via Helm (namespace
 
 monitoring-ui: ## Open VictoriaMetrics at http://localhost:8428/vmui/ (keep running)
 	kubectl -n monitoring port-forward svc/vm-single-victoria-metrics-single-server 8428:8428
+
+
+# --- Metric alerts + Alertmanager ----------------------------------------------
+.PHONY: metric-alerts-deploy metric-alerts-ui alertmanager-ui alert-inbox-ui alerts-test
+
+metric-alerts-deploy: ## Deploy metric rules, vmalert, Alertmanager and local webhook
+	kubectl apply -k k8s/monitoring/alerts
+
+metric-alerts-ui: ## Open metric vmalert UI
+	kubectl -n monitoring port-forward svc/metrics-vmalert 8881:8880
+
+alertmanager-ui: ## Open Alertmanager
+	kubectl -n monitoring port-forward svc/alertmanager 9093:9093
+
+alert-inbox-ui: ## Open received webhook notifications
+	kubectl -n monitoring port-forward svc/alert-inbox 8095:8080
+
+alerts-test: ## Check metric rules, unit scenarios and Alertmanager config
+	docker run --rm --user 0 --entrypoint /bin/promtool -v "$(CURDIR):/repo:ro" -w /repo/monitoring prom/prometheus:v3.4.1 test rules rules.test.yaml
+	docker run --rm --user 0 --entrypoint /bin/amtool -v "$(CURDIR)/k8s/monitoring/alerts:/config:ro" prom/alertmanager:v0.28.1 check-config /config/alertmanager.yaml

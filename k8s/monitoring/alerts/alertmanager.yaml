@@ -1,0 +1,25 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: local-webhook
+  group_by: [service, alertname, severity]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 4h
+
+receivers:
+  - name: local-webhook
+    webhook_configs:
+      - url: http://alert-inbox:8080/webhook
+        send_resolved: true
+
+# При недоступности пользовательского сценария подавляются
+# уведомления о производных HTTP-симптомах.
+# Runtime-алерты остаются видимыми.
+inhibit_rules:
+  - source_matchers:
+      - alertname="RepairDeskUserScenarioUnavailable"
+    target_matchers:
+      - alertname=~"RepairDeskHighErrorRate|RepairDeskSlowRequests"
+    equal: [service]

@@ -110,3 +110,22 @@ kubectl -n repair-desk set env deployment/api FAULT_ERROR_RATE- FAULT_DELAY_MS- 
 | X. Dev/prod parity | Same images and PostgreSQL version locally and in deployment |
 | XI. Logs | JSON logs to stdout, one line per request |
 | XII. Admin processes | Migrations run as a separate one-off `migrate` container |
+
+
+### Metric alerts and Alertmanager
+
+Five metric alerts (HTTP errors, latency, user scenario, Go memory and goroutines)
+are in [`k8s/monitoring/alerts/rules.yaml`](k8s/monitoring/alerts/rules.yaml).
+Unlike the existing log alert, these rules send notifications through Alertmanager
+into a local webhook inbox, including recovery notifications.
+
+```sh
+make metric-alerts-deploy  # after monitoring-deploy; kubectl apply -k
+make metric-alerts-ui     # port 8881 -> metrics vmalert
+make alertmanager-ui      # port 9093
+make alert-inbox-ui       # port 8095 -> received notifications
+make alerts-test         # rule unit tests and Alertmanager validation
+```
+
+A Compose alternative, fault demonstration, thresholds, screenshots and validation
+results are documented in [report6/Отчёт.md](report6/Отчёт.md).

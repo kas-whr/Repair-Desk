@@ -1,0 +1,459 @@
+rule_files:
+- ../k8s/monitoring/alerts/rules.yaml
+evaluation_interval: 15s
+tests:
+- name: healthy API and runtime
+  interval: 30s
+  input_series:
+  - &id001
+    series: repairdesk_probe_success{namespace="repair-desk",app="prober"}
+    values: 1+0x20
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="200"}
+    values: 0+60x20
+  - series: repairdesk_http_request_duration_seconds_bucket{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="200",le="0.25"}
+    values: 0+60x20
+  - series: go_goroutines{namespace="repair-desk",app="api",pod="api-a"}
+    values: 20+0x20
+  - series: process_resident_memory_bytes{namespace="repair-desk",app="api",pod="api-a"}
+    values: 20000000+0x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: 5xx sustained above 5 percent
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="200"}
+    values: 0+54x20
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="500"}
+    values: 0+6x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        service: repair-desk
+      exp_annotations:
+        summary: 'Repair Desk: более 5% ответов API — 5xx'
+        description: Доля 5xx за 5 минут выше 5% в течение 2 минут; не менее 100 запросов.
+          Проверить логи API, PostgreSQL и последние изменения.
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: low volume must not page
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="500"}
+    values: 0+1x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: 4xx are not server errors
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="409"}
+    values: 0+60x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: health probes excluded
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /healthz",status="500"}
+    values: 0+100x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: slow fraction above one percent
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="200"}
+    values: 0+60x20
+  - series: repairdesk_http_request_duration_seconds_bucket{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="200",le="0.25"}
+    values: 0+58x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        service: repair-desk
+      exp_annotations:
+        summary: 'Repair Desk: более 1% запросов API дольше 250 мс'
+        description: Нарушена краткосрочная цель задержки за 5 минут в течение 2 минут;
+          не менее 100 запросов. Проверить SQL, пул соединений, CPU и GC.
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: weighted aggregation across replicas
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="500"}
+    values: 0+2x20
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-b",route="GET
+      /api/v1/tickets",status="200"}
+    values: 0+100x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: counter reset is not an error spike
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="200"}
+    values: 0 60 120 180 240 300 360 420 480 540 0 60 120 180 240 300 360 420 480
+      540 600
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: probe sustained failure
+  interval: 30s
+  input_series:
+  - series: repairdesk_probe_success{namespace="repair-desk",app="prober"}
+    values: 0+0x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        service: repair-desk
+      exp_annotations: &id002
+        summary: 'Repair Desk: пользовательский сценарий недоступен'
+        description: Все проберы возвращают 0 либо метрика отсутствует в течение минуты.
+          Проверить frontend → API → PostgreSQL и сам пробер; после исчезновения таргета
+          возможна задержка staleness TSDB.
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: probe missing is not healthy
+  interval: 30s
+  input_series: []
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        service: repair-desk
+      exp_annotations: *id002
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: runtime per replica sustained
+  interval: 30s
+  input_series:
+  - *id001
+  - series: go_goroutines{namespace="repair-desk",app="api",pod="api-a"}
+    values: 501+0x20
+  - series: process_resident_memory_bytes{namespace="repair-desk",app="api",pod="api-a"}
+    values: 105906176+0x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        service: repair-desk
+        namespace: repair-desk
+        app: api
+        pod: api-a
+      exp_annotations:
+        summary: 'Repair Desk: RSS процесса API выше 100 MiB'
+        description: RSS выше 100 MiB в течение 5 минут при лимите контейнера 128
+          MiB. Проверить heap/GC и память контейнера до OOM; RSS не равен всей cgroup
+          memory.
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        service: repair-desk
+        namespace: repair-desk
+        app: api
+        pod: api-a
+      exp_annotations:
+        summary: 'Repair Desk: более 500 горутин в API'
+        description: Более 500 горутин в течение 5 минут. Проверить зависшие запросы,
+          пул БД и goroutine profile; порог уточняется по обычной нагрузке.
+
+- name: runtime brief spike stays pending
+  interval: 30s
+  input_series:
+  - *id001
+  - series: go_goroutines{namespace="repair-desk",app="api",pod="api-a"}
+    values: 501+0x4
+  - series: process_resident_memory_bytes{namespace="repair-desk",app="api",pod="api-a"}
+    values: 105906176+0x4
+  alert_rule_test:
+  - eval_time: 2m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 2m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 2m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 2m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 2m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: runtime threshold equality is healthy
+  interval: 30s
+  input_series:
+  - *id001
+  - series: go_goroutines{namespace="repair-desk",app="api",pod="api-a"}
+    values: 500+0x20
+  - series: process_resident_memory_bytes{namespace="repair-desk",app="api",pod="api-a"}
+    values: 104857600+0x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: zero traffic is not an incident
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="200"}
+    values: 0+0x20
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="500"}
+    values: 0+0x20
+  - series: repairdesk_http_request_duration_seconds_bucket{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="200",le="0.25"}
+    values: 0+0x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: short HTTP spike stays pending
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="500"}
+    values: 0+100x3
+  alert_rule_test:
+  - eval_time: 90s
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 90s
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 90s
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 90s
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 90s
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []
+
+- name: errors recover when bad samples leave window
+  interval: 30s
+  input_series:
+  - *id001
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="200"}
+    values: 0+60x20
+  - series: repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",pod="api-a",route="GET
+      /api/v1/tickets",status="500"}
+    values: 0+6x4 24+0x16
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: RepairDeskHighErrorRate
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskSlowRequests
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskUserScenarioUnavailable
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighMemory
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: RepairDeskHighGoroutines
+    exp_alerts: []

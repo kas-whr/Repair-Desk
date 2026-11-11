@@ -1,0 +1,73 @@
+groups:
+  - name: repair-desk-service
+    interval: 15s
+    rules:
+      - alert: RepairDeskHighErrorRate
+        expr: |
+          (
+            sum(rate(repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",route=~".* /api/.*",status=~"5.."}[5m]))
+            /
+            sum(rate(repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",route=~".* /api/.*"}[5m]))
+          ) > 0.05
+          and
+          sum(increase(repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",route=~".* /api/.*"}[5m])) >= 100
+        for: 2m
+        labels:
+          severity: critical
+          service: repair-desk
+        annotations:
+          summary: 'Repair Desk: более 5% ответов API — 5xx'
+          description: 'Доля 5xx за 5 минут выше 5% в течение 2 минут; не менее 100 запросов. Проверить логи API, PostgreSQL и последние изменения.'
+
+      - alert: RepairDeskSlowRequests
+        expr: |
+          (
+            1 -
+            sum(rate(repairdesk_http_request_duration_seconds_bucket{namespace="repair-desk",app="api",route=~".* /api/.*",le="0.25"}[5m]))
+            /
+            sum(rate(repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",route=~".* /api/.*"}[5m]))
+          ) > 0.01
+          and
+          sum(increase(repairdesk_http_request_duration_seconds_count{namespace="repair-desk",app="api",route=~".* /api/.*"}[5m])) >= 100
+        for: 2m
+        labels:
+          severity: warning
+          service: repair-desk
+        annotations:
+          summary: 'Repair Desk: более 1% запросов API дольше 250 мс'
+          description: 'Нарушена краткосрочная цель задержки за 5 минут в течение 2 минут; не менее 100 запросов. Проверить SQL, пул соединений, CPU и GC.'
+
+      - alert: RepairDeskUserScenarioUnavailable
+        expr: |
+          max(repairdesk_probe_success{namespace="repair-desk",app="prober"}) == 0
+          or max(absent(repairdesk_probe_success{namespace="repair-desk",app="prober"}))
+        for: 1m
+        labels:
+          severity: critical
+          service: repair-desk
+        annotations:
+          summary: 'Repair Desk: пользовательский сценарий недоступен'
+          description: 'Все проберы возвращают 0 либо метрика отсутствует в течение минуты. Проверить frontend → API → PostgreSQL и сам пробер; после исчезновения таргета возможна задержка staleness TSDB.'
+
+  - name: repair-desk-runtime
+    interval: 15s
+    rules:
+      - alert: RepairDeskHighMemory
+        expr: process_resident_memory_bytes{namespace="repair-desk",app="api"} > 100 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+          service: repair-desk
+        annotations:
+          summary: 'Repair Desk: RSS процесса API выше 100 MiB'
+          description: 'RSS выше 100 MiB в течение 5 минут при лимите контейнера 128 MiB. Проверить heap/GC и память контейнера до OOM; RSS не равен всей cgroup memory.'
+
+      - alert: RepairDeskHighGoroutines
+        expr: go_goroutines{namespace="repair-desk",app="api"} > 500
+        for: 5m
+        labels:
+          severity: warning
+          service: repair-desk
+        annotations:
+          summary: 'Repair Desk: более 500 горутин в API'
+          description: 'Более 500 горутин в течение 5 минут. Проверить зависшие запросы, пул БД и goroutine profile; порог уточняется по обычной нагрузке.'

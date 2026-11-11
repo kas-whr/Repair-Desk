@@ -1,0 +1,146 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-vmalert
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: metrics-vmalert}
+  template:
+    metadata:
+      labels: {app: metrics-vmalert}
+    spec:
+      containers:
+        - name: vmalert
+          image: victoriametrics/vmalert:v1.154.0
+          args:
+            - -datasource.url=http://vm-single-victoria-metrics-single-server:8428
+            - -notifier.url=http://alertmanager:9093
+            - -rule=/etc/alerts/rules.yaml
+            - -httpListenAddr=:8880
+          ports: [{name: http, containerPort: 8880}]
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          volumeMounts:
+            - {name: rules, mountPath: /etc/alerts, readOnly: true}
+      volumes:
+        - name: rules
+          configMap: {name: repairdesk-alert-rules}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-vmalert
+spec:
+  selector: {app: metrics-vmalert}
+  ports: [{name: http, port: 8880, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: alertmanager
+spec:
+  serviceName: alertmanager
+  replicas: 1
+  selector:
+    matchLabels: {app: alertmanager}
+  template:
+    metadata:
+      labels: {app: alertmanager}
+    spec:
+      securityContext:
+        fsGroup: 65534
+        runAsUser: 65534
+        runAsNonRoot: true
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.28.1
+          args:
+            - --config.file=/etc/alerts/alertmanager.yaml
+            - --storage.path=/alertmanager
+            - --cluster.listen-address=
+          ports: [{name: http, containerPort: 9093}]
+          readinessProbe:
+            httpGet: {path: /-/ready, port: http}
+          livenessProbe:
+            httpGet: {path: /-/healthy, port: http}
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/alerts, readOnly: true}
+            - {name: data, mountPath: /alertmanager}
+      volumes:
+        - name: config
+          configMap: {name: repairdesk-alertmanager}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+spec:
+  selector: {app: alertmanager}
+  ports: [{name: http, port: 9093, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: alert-inbox
+spec:
+  serviceName: alert-inbox
+  replicas: 1
+  selector:
+    matchLabels: {app: alert-inbox}
+  template:
+    metadata:
+      labels: {app: alert-inbox}
+    spec:
+      securityContext:
+        fsGroup: 10001
+        runAsUser: 10001
+        runAsNonRoot: true
+      containers:
+        - name: inbox
+          image: python:3.13-alpine
+          command: [python, /app/inbox.py]
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+          resources:
+            requests: {cpu: 10m, memory: 24Mi}
+            limits: {cpu: 100m, memory: 96Mi}
+          volumeMounts:
+            - {name: script, mountPath: /app, readOnly: true}
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: script
+          configMap: {name: repairdesk-alert-inbox}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-inbox
+spec:
+  selector: {app: alert-inbox}
+  ports: [{name: http, port: 8080, targetPort: http}]
