@@ -11,6 +11,7 @@ endif
 export MSYS_NO_PATHCONV := 1
 
 COMPOSE := docker compose
+LOCAL_COMPOSE := $(COMPOSE) -f docker-compose.yml -f k8s/monitoring/compose.yaml
 MIGRATE := $(COMPOSE) run --rm migrate
 DB_URL  := postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)?sslmode=disable
 
@@ -42,6 +43,22 @@ logs: ## Follow logs (optionally s=api)
 
 ps: ## Show container status
 	$(COMPOSE) ps -a
+
+.PHONY: local-pull local-up local-down local-ps local-logs
+local-pull: ## Download images for the app and local monitoring, one service at a time
+	$(LOCAL_COMPOSE) --parallel 1 pull
+
+local-up: ## Start app, Grafana (3001), metrics and alerts locally
+	$(LOCAL_COMPOSE) up -d --build
+
+local-down: ## Stop app and local monitoring, keeping all data
+	$(LOCAL_COMPOSE) down
+
+local-ps: ## Show app and local monitoring status
+	$(LOCAL_COMPOSE) ps -a
+
+local-logs: ## Show local logs (optionally s=api or s=grafana)
+	$(LOCAL_COMPOSE) logs -f $(s)
 
 clean: ## Stop the stack and DELETE the database volume
 	@read -p "Delete all database data? [y/N]: " ans; \

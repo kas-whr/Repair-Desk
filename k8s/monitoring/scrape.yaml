@@ -17,4 +17,11 @@ scrape_configs:
           namespace: repair-desk
           app: prober
           pod: compose-prober
-          
+
+  - job_name: repairdesk-postgres
+    static_configs:
+      - targets: [postgres-exporter:9187]
+        labels:
+          namespace: repair-desk
+          app: postgres
+          pod: compose-postgres

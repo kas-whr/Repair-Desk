@@ -22,6 +22,11 @@ make up                # postgres -> migrations -> api -> frontend
 
 `make help` lists all commands.
 
+For the app **with local Grafana and monitoring**, use `make local-pull` then
+`make local-up`. Frontend: http://localhost:3000; Grafana: http://localhost:3001
+(initial login `admin` / `admin`, configurable in `.env`). Stop with `make local-down`.
+See the short Russian [startup guide](docs/quick-start.md).
+
 ## Project structure
 ```
 cmd/api/main.go              entry point: config, DB pool, HTTP server, graceful shutdown
