@@ -1,5 +1,7 @@
 # Repair Desk + Grafana — короткая инструкция
 
+**Для задания с Grafana в minikube:** используй [инструкцию сдачи](grafana-demo.md): запуск в Kubernetes, что нажимать, какие скриншоты сделать и что показать в видео. Ниже — отдельный вариант для обычного локального запуска через Docker Compose.
+
 Нужны Docker Desktop с Docker Compose и `make`. Запусти Docker Desktop и дождись готовности. Go, Node.js и PostgreSQL отдельно устанавливать не нужно.
 
 ## 1. Перейти в проект
