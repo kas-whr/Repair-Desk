@@ -148,3 +148,10 @@ alert-inbox-ui: ## Open received webhook notifications
 alerts-test: ## Check metric rules, unit scenarios and Alertmanager config
 	docker run --rm --user 0 --entrypoint /bin/promtool -v "$(CURDIR):/repo:ro" -w /repo/monitoring prom/prometheus:v3.4.1 test rules rules.test.yaml
 	docker run --rm --user 0 --entrypoint /bin/amtool -v "$(CURDIR)/k8s/monitoring/alerts:/config:ro" prom/alertmanager:v0.28.1 check-config /config/alertmanager.yaml
+
+.PHONY: grafana-deploy grafana-ui
+grafana-deploy: ## Deploy Grafana with VictoriaMetrics and Repair Desk/Postgres dashboards
+	kubectl apply -k k8s/monitoring/grafana
+
+grafana-ui: ## Open Grafana
+	kubectl -n monitoring port-forward svc/grafana 3000:80
