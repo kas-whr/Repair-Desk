@@ -1,0 +1,96 @@
+# ROLLING UPDATE — шаг 1: стартовая версия.
+# Один Deployment `my-app`, Kubernetes сам постепенно заменяет поды при обновлении.
+# Gateway API здесь не дробит трафик — HTTPRoute просто всегда смотрит на сервис
+# `my-app`, а состав pod'ов за ним меняет контроллер Deployment.
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app
+  namespace: deploy-demo
+  labels:
+    app: my-app
+spec:
+  selector:
+    app: my-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: metrics
+      port: 9101
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: deploy-demo
+  labels:
+    app: my-app
+spec:
+  replicas: 6
+  # strategy RollingUpdate — стратегия по умолчанию в Kubernetes.
+  #   maxSurge: 1        — на время обновления поднять 1 дополнительный под
+  #   maxUnavailable: 0  — не гасить старые поды, пока новый не станет Ready
+  # Итог: обновление без простоя, в один момент времени соседствуют v1 и v2.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+        version: v1.0.0   # метка версии на поде — по ней Prometheus relabeling
+                          # проставит version в метриках (см. monitoring/servicemonitor.yaml)
+    spec:
+      containers:
+        - name: my-app
+          image: containersol/k8s-deployment-strategies:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: probe
+              containerPort: 8086
+            - name: metrics
+              containerPort: 9101
+          env:
+            - name: VERSION
+              value: v1.0.0
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: probe
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: probe
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+# HTTPRoute: 100% трафика на сервис my-app (версии подов за ним меняет Deployment).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: my-app
+  namespace: deploy-demo
+spec:
+  parentRefs:
+    - name: eg
+  rules:
+    - backendRefs:
+        - name: my-app
+          port: 80

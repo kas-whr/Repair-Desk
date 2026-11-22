@@ -1,0 +1,85 @@
+{
+  "uid": "repairdesk-release-strategies",
+  "title": "Repair Desk \u2014 release traffic by version",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "refresh": "5s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "RPS by release version",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(repairdesk_release_http_requests_total[2m])) by (version)",
+          "legendFormat": "{{version}} {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Responses by version and status",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(repairdesk_release_http_requests_total[2m])) by (version,status)",
+          "legendFormat": "{{version}} {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Version share",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(repairdesk_release_http_requests_total[2m])) by (version) / scalar(sum(rate(repairdesk_release_http_requests_total[2m])))",
+          "legendFormat": "{{version}} {{status}}"
+        }
+      ]
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": []
+  }
+}

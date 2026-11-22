@@ -1,0 +1,64 @@
+# ROLLING UPDATE — шаг 2: накатываем версию 2.
+# Меняем ТОЛЬКО поле VERSION у того же Deployment `my-app` и применяем файл.
+# Kubernetes запускает rolling update: поднимает новый под (maxSurge=1), ждёт его
+# Ready, гасит один старый — и так, пока все 6 подов не станут v2.0.0.
+# Сервис и HTTPRoute не трогаем — трафик как шёл на `my-app`, так и идёт.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: deploy-demo
+  labels:
+    app: my-app
+spec:
+  replicas: 6
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+        version: v2.0.0   # новая версия — во время раскатки старые поды (v1.0.0)
+                          # и новые (v2.0.0) различимы в метриках через relabeling
+    spec:
+      containers:
+        - name: my-app
+          image: containersol/k8s-deployment-strategies:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: probe
+              containerPort: 8086
+            - name: metrics
+              containerPort: 9101
+          env:
+            - name: VERSION
+              value: v2.0.0
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: probe
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: probe
+            # Небольшая задержка готовности — чтобы смену версий было видно
+            # в `kubectl get pods -w` и на графике, а не мгновенно.
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

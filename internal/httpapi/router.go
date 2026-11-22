@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/kas-whr/Repair-Desk/internal/service"
@@ -46,6 +47,7 @@ func NewRouter(d Deps) http.Handler {
 
 	mux.HandleFunc("GET /healthz", h.healthz)
 	mux.HandleFunc("GET /readyz", h.readyz)
+	mux.HandleFunc("GET /api/v1/version", version)
 
 	mux.HandleFunc("GET /api/v1/categories", h.listCategories)
 	mux.HandleFunc("POST /api/v1/categories", h.createCategory)
@@ -74,7 +76,7 @@ func NewRouter(d Deps) http.Handler {
 	if d.Fault.enabled() {
 		d.Logger.Warn("fault injection is enabled", "error_rate", d.Fault.ErrorRate, "delay", d.Fault.Delay.String())
 	}
-	return withRecover(d.Logger, withLogging(d.Logger, withFault(d.Fault, mux, withJSONFallback(mux))))
+	return withRecover(d.Logger, withLogging(d.Logger, withReadOnly(os.Getenv("SHADOW_READ_ONLY") == "true", withFault(d.Fault, mux, withJSONFallback(mux)))))
 }
 
 func (h *Handler) healthz(w http.ResponseWriter, _ *http.Request) {

@@ -1,0 +1,77 @@
+# Версия 1 приложения my-app (в стратегиях blue/green — «green», в canary — «stable»).
+# Образ containersol/k8s-deployment-strategies:
+#   :8080 — HTTP, отвечает «Host: <pod>, Version: <VERSION>»
+#   :8086 — пробы /live и /ready
+#   :9101 — метрики Prometheus (/metrics), метрика http_requests_total{version=...}
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-v1
+  namespace: deploy-demo
+  labels:
+    app: my-app
+    version: v1.0.0
+spec:
+  selector:
+    app: my-app
+    version: v1.0.0
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: metrics
+      port: 9101
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app-v1
+  namespace: deploy-demo
+  labels:
+    app: my-app
+    version: v1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+      version: v1.0.0
+  template:
+    metadata:
+      labels:
+        app: my-app
+        version: v1.0.0
+    spec:
+      containers:
+        - name: my-app
+          image: containersol/k8s-deployment-strategies:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: probe
+              containerPort: 8086
+            - name: metrics
+              containerPort: 9101
+          env:
+            - name: VERSION
+              value: v1.0.0
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: probe
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: probe
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

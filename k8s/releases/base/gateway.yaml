@@ -1,0 +1,18 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: repairdesk-eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: repairdesk-eg
+  namespace: repair-desk-release
+spec:
+  gatewayClassName: repairdesk-eg
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80

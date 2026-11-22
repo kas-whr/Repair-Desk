@@ -13,6 +13,13 @@ import (
 
 const namespace = "repairdesk"
 
+// Keep the existing HTTP histogram unchanged for compatibility with SLO rules.
+var ReleaseRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+	Namespace: namespace,
+	Name:      "release_http_requests_total",
+	Help:      "Completed API requests by embedded image version (including mirrored GETs).",
+}, []string{"version", "method", "status"})
+
 // Business metrics.
 var (
 	TicketsCreated = promauto.NewCounterVec(prometheus.CounterOpts{

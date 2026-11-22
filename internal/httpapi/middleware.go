@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/kas-whr/Repair-Desk/internal/buildinfo"
 	"github.com/kas-whr/Repair-Desk/internal/metrics"
 )
 
@@ -37,6 +39,7 @@ func withLogging(logger *slog.Logger, next http.Handler) http.Handler {
 			requestID = uuid.NewString()
 		}
 		w.Header().Set("X-Request-ID", requestID)
+		w.Header().Set("X-App-Version", buildinfo.Version)
 
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w}
@@ -60,11 +63,16 @@ func withLogging(logger *slog.Logger, next http.Handler) http.Handler {
 		}
 		elapsed := time.Since(start)
 		metrics.HTTPRequestDuration.WithLabelValues(r.Method, route, strconv.Itoa(status)).Observe(elapsed.Seconds())
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			metrics.ReleaseRequests.WithLabelValues(buildinfo.Version, r.Method, strconv.Itoa(status)).Inc()
+		}
 
 		// r.Pattern is set by ServeMux on this same request, e.g. "GET /api/v1/tickets/{id}":
 		// unlike path it has no IDs, so it is suitable for grouping.
 		logger.Log(r.Context(), level, "http request",
 			"request_id", requestID,
+			"version", buildinfo.Version,
+			"demo_run", r.Header.Get("X-Demo-Run"),
 			"method", r.Method,
 			"route", r.Pattern,
 			"path", r.URL.Path,
