@@ -1,0 +1,75 @@
+# Версия 2 приложения my-app (в стратегиях blue/green — «blue», в canary — «new»).
+# Отличается от v1 только значением VERSION — этого достаточно, чтобы видеть
+# распределение трафика по версиям в curl и на дашборде Grafana.
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-v2
+  namespace: deploy-demo
+  labels:
+    app: my-app
+    version: v2.0.0
+spec:
+  selector:
+    app: my-app
+    version: v2.0.0
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: metrics
+      port: 9101
+      targetPort: metrics
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app-v2
+  namespace: deploy-demo
+  labels:
+    app: my-app
+    version: v2.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+      version: v2.0.0
+  template:
+    metadata:
+      labels:
+        app: my-app
+        version: v2.0.0
+    spec:
+      containers:
+        - name: my-app
+          image: containersol/k8s-deployment-strategies:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: probe
+              containerPort: 8086
+            - name: metrics
+              containerPort: 9101
+          env:
+            - name: VERSION
+              value: v2.0.0
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: probe
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: probe
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

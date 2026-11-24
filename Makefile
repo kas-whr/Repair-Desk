@@ -5,6 +5,7 @@ export
 # would fall back to cmd.exe, so point it to Git Bash explicitly.
 ifeq ($(OS),Windows_NT)
 SHELL := C:/Program Files/Git/bin/bash.exe
+RELEASE_BASH := "$(SHELL)"
 endif
 
 # Git Bash on Windows rewrites args like /migrations into C:/Program Files/Git/...
@@ -155,3 +156,38 @@ grafana-deploy: ## Deploy Grafana with VictoriaMetrics and Repair Desk/Postgres 
 
 grafana-ui: ## Open Grafana
 	kubectl -n monitoring port-forward svc/grafana 3000:80
+
+# --- Release strategies (Gateway API, isolated application namespace) ---------
+RELEASE_BASH ?= bash
+.PHONY: release-gateway release-secret release-build release-deploy release-route \
+        release-rolling release-reset release-gateway-ui release-traffic release-logs
+
+release-gateway: ## Install Envoy Gateway + release Gateway (minikube must be running)
+	$(RELEASE_BASH) scripts/releases/release.sh gateway
+
+release-secret: ## Create release namespace DB credentials from .env
+	@$(RELEASE_BASH) scripts/releases/release.sh secret
+
+release-build: ## Build immutable v1.0.0 and v2.0.0 API images in minikube
+	$(RELEASE_BASH) scripts/releases/release.sh build
+
+release-deploy: release-secret ## Deploy release replicas and start with v1 (existing DB + migrations required)
+	$(RELEASE_BASH) scripts/releases/release.sh deploy
+
+release-route: ## Apply route: make release-route STRATEGY=canary-90-10
+	$(RELEASE_BASH) scripts/releases/release.sh route
+
+release-rolling: ## Rolling update: RELEASE_VERSION=v2.0.0 (or v1.0.0 for rollback)
+	$(RELEASE_BASH) scripts/releases/release.sh rolling
+
+release-reset: ## Return route and rolling deployment to v1, preserving DB and metrics
+	$(RELEASE_BASH) scripts/releases/release.sh reset
+
+release-gateway-ui: ## Forward Envoy to localhost:8888 (keep running)
+	$(RELEASE_BASH) scripts/releases/release.sh gateway-ui
+
+release-traffic: ## Generate version requests; AUDIENCE=mixed|default|beta, logs/releases/traffic.log
+	$(RELEASE_BASH) scripts/releases/release.sh traffic
+
+release-logs: ## Save application logs, pods and active HTTPRoute to logs/releases
+	$(RELEASE_BASH) scripts/releases/release.sh logs

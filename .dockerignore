@@ -8,3 +8,5 @@ Dockerfile
 .dockerignore
 docker-compose.yml
 Makefile
+logs/
+*.mp4

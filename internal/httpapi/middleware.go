@@ -64,7 +64,12 @@ func withLogging(logger *slog.Logger, next http.Handler) http.Handler {
 		elapsed := time.Since(start)
 		metrics.HTTPRequestDuration.WithLabelValues(r.Method, route, strconv.Itoa(status)).Observe(elapsed.Seconds())
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			metrics.ReleaseRequests.WithLabelValues(buildinfo.Version, r.Method, strconv.Itoa(status)).Inc()
+			// Match the HTTPRoute audience, keeping metric cardinality bounded.
+			audience := "default"
+			if r.Header.Get("X-User-Group") == "beta" {
+				audience = "beta"
+			}
+			metrics.ReleaseRequests.WithLabelValues(buildinfo.Version, r.Method, strconv.Itoa(status), audience).Inc()
 		}
 
 		// r.Pattern is set by ServeMux on this same request, e.g. "GET /api/v1/tickets/{id}":

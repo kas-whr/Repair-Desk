@@ -5,7 +5,7 @@ metadata:
   namespace: repair-desk-release
 spec:
   replicas: 2
-  minReadySeconds: 10
+  minReadySeconds: 60
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -50,6 +50,7 @@ spec:
             path: /readyz
             port: http
           periodSeconds: 2
+          timeoutSeconds: 3
         livenessProbe:
           httpGet:
             path: /healthz

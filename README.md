@@ -65,6 +65,12 @@ make k8s-url        # frontend URL; on Windows keep this terminal open
 
 Images are tagged with `VERSION` from the Makefile; bump it together with the tags in `k8s/*.yaml`.
 
+### Release strategies (Envoy Gateway)
+
+See [the release runbook](k8s/releases/README.md) for Rolling, Blue/Green, Canary,
+A/B and Shadow, including setup, rollback commands and the Grafana screenshot/video sequence.
+The `make release-*` commands save evidence in `logs/releases/`.
+
 ### Logs (VictoriaLogs)
 All services log JSON lines to stdout (`timestamp`, `level`, `message`, `service.name`, `request_id`, …).
 A Vector DaemonSet ships logs of the `repair-desk` namespace to VictoriaLogs (manifests in [k8s/logging/](k8s/logging/)).

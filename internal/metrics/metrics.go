@@ -18,7 +18,7 @@ var ReleaseRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 	Namespace: namespace,
 	Name:      "release_http_requests_total",
 	Help:      "Completed API requests by embedded image version (including mirrored GETs).",
-}, []string{"version", "method", "status"})
+}, []string{"version", "method", "status", "audience"})
 
 // Business metrics.
 var (

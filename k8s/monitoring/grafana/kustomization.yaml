@@ -8,4 +8,4 @@ configMapGenerator:
   - name: grafana-provider
     files: [provider.yaml]
   - name: grafana-dashboards
-    files: [application.json, postgres.json]
+    files: [application.json, postgres.json, release-dashboard.json]

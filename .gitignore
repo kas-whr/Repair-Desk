@@ -12,6 +12,7 @@
 *.test
 
 *.mp4
+logs/releases/
 
 # Code coverage profiles and other test artifacts
 *.out
